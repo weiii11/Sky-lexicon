@@ -1,0 +1,16 @@
+{
+  "name": "sky-lexicon",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.25.0",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "tsc --noEmit && vite build",
+    "preview": "node scripts/serve.mjs",
+    "data": "node scripts/import-vocabulary.mjs",
+    "test": "node --experimental-transform-types --test tests/*.test.ts"
+  },
+  "dependencies": { "phaser": "^3.90.0" },
+  "devDependencies": { "typescript": "^5.9.3", "vite": "^7.1.7", "@types/node": "^24.0.0" }
+}

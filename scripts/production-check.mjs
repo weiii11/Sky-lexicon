@@ -1,0 +1,62 @@
+import { createRequire } from 'node:module';
+import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import assert from 'node:assert/strict';
+import { fileURLToPath } from 'node:url';
+
+const require = createRequire(import.meta.url);
+const { chromium } = require(process.env.PLAYWRIGHT_MODULE ?? 'playwright');
+const browser = await chromium.launch({ headless: true, executablePath: process.env.BROWSER_EXECUTABLE });
+const context = await browser.newContext({ viewport: { width: 1440, height: 960 } });
+const errors = [], blocked = [];
+await context.route('**/*', route => {
+  const url = new URL(route.request().url());
+  if (url.protocol.startsWith('http') && !['127.0.0.1', 'localhost'].includes(url.hostname)) { blocked.push(url.hostname); return route.abort(); }
+  return route.continue();
+});
+const page = await context.newPage();
+page.on('pageerror', error => errors.push(error.message));
+const output = new URL('../test-results/', import.meta.url); mkdirSync(output, { recursive: true });
+try {
+  const response = await page.goto(process.env.PREVIEW_URL ?? 'http://127.0.0.1:5174/', { waitUntil: 'networkidle' });
+  assert.equal(response.status(), 200);
+  assert.equal(await page.locator('.island').count(), 22);
+  await page.locator('#settings-button').click();
+  const downloadPromise = page.waitForEvent('download');
+  await page.locator('#export-progress').click();
+  const download = await downloadPromise;
+  const backupPath = fileURLToPath(new URL('export-test.json', output)); await download.saveAs(backupPath);
+  const backup = JSON.parse(readFileSync(backupPath, 'utf8')); assert.equal(backup.version, 1);
+  const vocabulary = JSON.parse(readFileSync(new URL('../src/vocabulary.json', import.meta.url), 'utf8'));
+  for (const word of vocabulary.words.filter(w => w.chapterId === 'chapter-01')) backup.words[word.key] = { correct: 2, errors: 0, needsHint: false, inNotebook: false };
+  backup.settings.phrases = true;
+  backup.settings.showDetails = true;
+  writeFileSync(backupPath, JSON.stringify(backup));
+  await page.locator('#import-progress').setInputFiles(backupPath);
+  await page.waitForFunction(() => !document.querySelector('#dialog').open);
+  await page.locator('#start-island').click();
+  await page.waitForFunction(() => !document.querySelector('#typing-input').disabled);
+  assert.equal(await page.locator('#mode-tag').textContent(), '中文回忆');
+  assert.equal(await page.locator('#word-details').isVisible(), true);
+  assert.ok(await page.locator('#leaf-feedback .blank').count() > 0);
+  assert.equal(/[\p{L}]/u.test(await page.locator('#leaf-feedback').textContent()), false);
+  await page.locator('#close-details').click();
+  const recallId = await page.locator('#typing-form').getAttribute('data-word-id');
+  const recallWord = vocabulary.words.find(word => word.id === recallId);
+  await page.locator('#typing-input').fill(recallWord.text.slice(0, Math.min(2, recallWord.text.length - 1)));
+  await page.waitForFunction(() => !document.querySelector('#toast').classList.contains('visible'));
+  await page.screenshot({ path: fileURLToPath(new URL('recall-typing.png', output)), fullPage: true });
+  const phraseSaved = await page.evaluate(() => JSON.parse(localStorage.getItem('sky-lexicon:v1')).settings.phrases);
+  assert.equal(phraseSaved, true);
+  await page.locator('#exit-game').click();
+  await page.locator('.chapter-link[data-chapter="chapter-22"]').click();
+  await page.locator('#start-island').click();
+  await page.waitForFunction(() => !document.querySelector('#typing-input').disabled);
+  assert.equal(await page.locator('#word-details').isVisible(), false);
+  await page.locator('#typing-input').fill(await page.locator('#word-english').textContent());
+  assert.equal(await page.locator('#step-count').textContent(), '1');
+  await page.waitForTimeout(500);
+  await page.screenshot({ path: fileURLToPath(new URL('production-game.png', output)), fullPage: true });
+  assert.deepEqual(errors, []);
+  const report = { builtSiteLoads: true, externalNetworkBlocked: true, blockedDomains: blocked, exportImportWorks: true, importedRecallWorks: true, settingsPersist: true, localGamePlayable: true, errors };
+  writeFileSync(new URL('production-report.json', output), JSON.stringify(report, null, 2)); console.log(JSON.stringify(report, null, 2));
+} finally { await browser.close(); }
