@@ -3,7 +3,7 @@ import type { SaveData, StorageLike, Word, WordProgress } from './types.ts';
 export const SAVE_KEY = 'sky-lexicon:v1';
 export const RECALL_THRESHOLD = 2;
 export function blankSave(): SaveData {
-  return { version: 1, words: {}, chapters: {}, settings: { pace: 'normal', sound: true, phrases: false, showDetails: false }, lastChapter: 'chapter-01', legacyImported: false };
+  return { version: 1, words: {}, chapters: {}, settings: { pace: 'normal', sound: true, music: true, phrases: false, showDetails: false }, lastChapter: 'chapter-01', legacyImported: false };
 }
 export function blankWord(): WordProgress {
   return { correct: 0, errors: 0, lastPracticed: 0, needsHint: false, inNotebook: false, lastInput: '', lastError: null };
@@ -40,6 +40,7 @@ export class ProgressStore {
     if (input.settings) {
       if (['slow', 'normal', 'fast'].includes(input.settings.pace)) result.settings.pace = input.settings.pace;
       result.settings.sound = input.settings.sound !== false;
+      result.settings.music = input.settings.music !== false;
       result.settings.phrases = input.settings.phrases === true;
       result.settings.showDetails = input.settings.showDetails === true;
     }

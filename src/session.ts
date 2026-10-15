@@ -2,6 +2,10 @@ import type { Pace, Word } from './types.ts';
 import { ProgressStore } from './progress.ts';
 
 export const ROUND_STEPS = 12;
+export function roundTime(seconds: number): string {
+  const total = Math.ceil(Math.max(0, seconds));
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
+}
 export const paceFactor: Record<Pace, number> = { slow: 0.7, normal: 1, fast: 1.4 };
 export function normalizeInput(text: string): string { return text.trim().toLowerCase().replace(/[’‘]/g, "'").replace(/\s+/g, ' '); }
 export function wordDuration(word: Word, pace: Pace, recall: boolean): number {

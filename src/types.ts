@@ -23,7 +23,7 @@ export interface SaveData {
   version: 1;
   words: Record<string, WordProgress>;
   chapters: Record<string, ChapterProgress>;
-  settings: { pace: Pace; sound: boolean; phrases: boolean; showDetails: boolean };
+  settings: { pace: Pace; sound: boolean; music: boolean; phrases: boolean; showDetails: boolean };
   lastChapter: string;
   legacyImported: boolean;
 }

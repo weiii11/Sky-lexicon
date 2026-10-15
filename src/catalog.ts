@@ -19,5 +19,5 @@ export function chapterDescription(chapter: Chapter) { return descriptions[chapt
 export function islandPosition(index: number) {
   const row = Math.floor(index / 5);
   const col = row % 2 === 0 ? index % 5 : 4 - index % 5;
-  return { x: 170 + col * 285 + (row % 2 ? 30 : 0), y: 220 + row * 295 + (col % 2 ? -45 : 20) };
+  return { x: 170 + col * 320 + (row % 2 ? 30 : 0), y: 220 + row * 340 + (col % 2 ? -45 : 20) };
 }

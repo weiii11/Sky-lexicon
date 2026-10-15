@@ -1,7 +1,7 @@
 import './style.css';
 import { chapters, chapterWords, words, metadata, chapterArt, chapterDescription, islandPosition } from './catalog.ts';
 import { ProgressStore, RECALL_THRESHOLD } from './progress.ts';
-import { TypingSession, ROUND_STEPS, normalizeInput } from './session.ts';
+import { TypingSession, ROUND_STEPS, normalizeInput, roundTime } from './session.ts';
 import { icon, escapeHTML as esc } from './icons.ts';
 import { GameAudio } from './audio.ts';
 import { letterFeedback } from './typing.ts';
@@ -13,7 +13,7 @@ import type { createGarden } from './game.ts';
 
 const app = document.querySelector<HTMLDivElement>('#app')!;
 const store = new ProgressStore(localStorage, words);
-const audio = new GameAudio(); audio.enabled = store.data.settings.sound;
+const audio = new GameAudio(); audio.enabled = store.data.settings.sound; audio.musicEnabled = store.data.settings.music;
 let selected = chapters.find(c => c.id === store.data.lastChapter) ?? chapters[0];
 let session: TypingSession | null = null;
 let garden: ReturnType<typeof createGarden> | null = null;
@@ -50,7 +50,7 @@ function shell() {
     <header class="topbar">
       <button class="brand" id="home-button" aria-label="返回群岛地图"><span class="brand-emblem">${icon('islands')}</span><span><strong>云间词屿</strong><small>SKY LEXICON</small></span></button>
       <nav class="main-nav" aria-label="主导航"><button id="nav-map" class="nav-button active">${icon('compass')}<span>群岛地图</span></button><button id="nav-explored" class="nav-button mobile-explored-link" aria-label="查看已探索词汇">${icon('leaf')}<span>已探索词汇</span></button><button id="nav-notebook" class="nav-button">${icon('book')}<span>单词本</span><span class="nav-count" id="notebook-count">0</span></button></nav>
-      <div class="header-tools"><span class="local-badge"><i></i>进度自动保存</span><button id="settings-button" class="icon-button" aria-label="设置与数据备份">${icon('settings')}</button></div>
+      <div class="header-tools"><span class="local-badge"><i></i>进度自动保存</span><button id="music-button" class="icon-button music-button" aria-label="背景音乐" aria-pressed="false">${icon('music')}</button><button id="settings-button" class="icon-button" aria-label="设置与数据备份">${icon('settings')}</button></div>
     </header>
     <main id="main"></main>
     <dialog id="dialog" class="dialog"><div id="dialog-content"></div></dialog>
@@ -60,6 +60,8 @@ function shell() {
   $('#nav-notebook').onclick = () => showNotebook();
   $('#nav-explored').onclick = showExplored;
   $('#settings-button').onclick = showSettings;
+  $('#music-button').onclick = () => setMusicPreference(!audio.musicEnabled);
+  refreshMusicButton();
   $('#dialog').addEventListener('click', event => { if (event.target === $('#dialog') && !$('#dialog').classList.contains('result-dialog')) closeModal(); });
   $('#dialog').addEventListener('cancel', event => { event.preventDefault(); if (!$('#dialog').classList.contains('result-dialog')) closeModal(); });
   $('#dialog').addEventListener('close', () => {
@@ -73,8 +75,20 @@ function shell() {
   refreshNotebookCount();
 }
 function refreshNotebookCount() { $('#notebook-count').textContent = String(store.notebook().length); }
+function refreshMusicButton() {
+  const button = $('#music-button');
+  button.setAttribute('aria-pressed', String(audio.musicEnabled));
+  button.setAttribute('aria-label', audio.musicEnabled ? '关闭背景音乐' : '开启背景音乐');
+  button.title = `背景音乐：${audio.musicEnabled ? '已开启' : '已关闭'}`;
+}
+function setMusicPreference(enabled: boolean) {
+  audio.setMusic(enabled); store.data.settings.music = enabled; store.save(); refreshMusicButton();
+  const toggle = document.querySelector<HTMLInputElement>('#music-toggle'); if (toggle) toggle.checked = enabled;
+  if (currentView === 'game' && !$<HTMLDialogElement>('#dialog').open) $<HTMLInputElement>('#typing-input').focus({ preventScroll: true });
+}
 
 function renderMap() {
+  audio.setScene('map');
   islandVisibility?.disconnect();
   currentView = 'map'; $('#nav-map').classList.add('active');
   const totals = summary();
@@ -94,7 +108,7 @@ function renderMap() {
         <div class="map-viewport" id="map-viewport" tabindex="0" aria-label="天空地图，可横向和纵向滚动">
           <div class="map-world" id="map-world">
             <div class="cloud cloud-one"></div><div class="cloud cloud-two"></div><div class="cloud cloud-three"></div>
-            <svg class="island-path" viewBox="0 0 1600 1550" aria-hidden="true"><path d="${path}"/></svg>
+            <svg class="island-path" viewBox="0 0 1740 1800" aria-hidden="true"><path d="${path}"/></svg>
             ${chapters.map((chapter, index) => {
               const pos = islandPosition(index), stats = chapterSummary(chapter);
               return `<button class="island ${chapter.id === selected.id ? 'selected' : ''} ${stats.complete ? 'completed' : ''}" id="island-${chapter.id}" data-chapter="${chapter.id}" style="left:${pos.x}px;top:${pos.y}px;--float-delay:${index * -0.71}s" aria-label="${chapter.name}，${stats.count} 个词条${stats.complete ? '，已完整探索' : ''}">
@@ -158,13 +172,13 @@ async function startGame(chapterId: string, review: ReviewOptions | null = null)
   islandVisibility?.disconnect(); islandVisibility = null;
   gardenResize?.disconnect(); gardenResize = null;
   if (garden) { garden.game.destroy(true); garden = null; }
-  currentView = 'game'; userPaused = false; composing = false;
+  currentView = 'game'; userPaused = false; composing = false; audio.setScene('game');
   lastRun = { chapterId, review };
   session = new TypingSession(review ? 'review' : chapterId, pool, store, store.data.settings.pace);
   audio.unlock(); $('#nav-map').classList.remove('active');
   $('#main').innerHTML = `
     <section class="game-layout">
-      <div class="game-toolbar"><button class="text-button" id="exit-game">${icon('back')}返回群岛</button><div class="game-title"><span class="eyebrow">${review ? 'A LITTLE SECOND CHANCE' : `ISLAND ${String(chapter.number).padStart(2, '0')}`}</span><h1>${review ? review.kind === 'explored' ? '已探索词汇复习' : '错词温习' : chapter.name}<span> · 荷塘小径</span></h1></div><div class="game-controls"><select id="pace-select" aria-label="游戏速度"><option value="slow">慢慢来</option><option value="normal">轻快行</option><option value="fast">挑战一下</option></select><button class="details-toggle" id="details-toggle" aria-controls="word-details" aria-pressed="false">${icon('book')}<span>展开注释</span></button><button class="icon-button" id="sound-button" aria-label="切换声音">${icon(audio.enabled ? 'sound' : 'mute')}</button><button class="icon-button" id="pause-button" aria-label="暂停游戏">${icon('pause')}</button></div></div>
+      <div class="game-toolbar"><button class="text-button" id="exit-game">${icon('back')}返回群岛</button><div class="game-title"><span class="eyebrow">${review ? 'A LITTLE SECOND CHANCE' : `ISLAND ${String(chapter.number).padStart(2, '0')}`}</span><h1>${review ? review.kind === 'explored' ? '已探索词汇复习' : '错词温习' : chapter.name}<span> · 荷塘小径</span></h1></div><div class="game-controls"><select id="pace-select" aria-label="游戏速度"><option value="slow">慢慢来</option><option value="normal">轻快行</option><option value="fast">挑战一下</option></select><button class="details-toggle" id="details-toggle" aria-controls="word-details" aria-pressed="false">${icon('book')}<span>展开注释</span></button><button class="icon-button" id="sound-button" aria-label="切换游戏音效" title="游戏音效；音乐可在顶部单独开关">${icon(audio.enabled ? 'sound' : 'mute')}</button><button class="icon-button" id="pause-button" aria-label="暂停游戏">${icon('pause')}</button></div></div>
       <div class="game-content details-closed" id="game-content">
         <aside class="game-note"><span class="eyebrow">ONE WORD, ONE STEP</span><h2>向前一点，<br>就近一点。</h2><p>在荷叶之间，<br>收集属于你的词汇。</p><div class="step-stat"><strong id="step-count">0</strong><span>/ 12 次跳跃</span></div><div class="step-dots" id="step-dots">${Array.from({ length: 12 }, () => '<i></i>').join('')}</div><div class="lives" id="lives" aria-label="剩余三次机会">${icon('heart')}${icon('heart')}${icon('heart')}</div><span class="small-note">落水也没关系，<br>我们把这个词记下来。</span><button class="text-button" id="game-notebook">${icon('book')}打开单词本</button></aside>
         <div class="garden-frame"><div class="garden-caption"><span>云间庭院</span><span id="mode-tag">英文辅助</span></div><div id="garden" class="garden-canvas" aria-label="青蛙跳荷叶游戏画面"><div class="game-loading">正在走进荷塘…</div></div>${leafPromptMarkup()}<div class="game-message" id="game-message" role="status"></div></div>
@@ -375,7 +389,7 @@ function showIslandCelebration(achieved: Chapter[]) {
 function showResult() {
   if (!session || currentView !== 'game') return;
   const result = session.result(); garden?.scene.stop(); if (result.won) audio.play('win');
-  openModal(`<div class="result-art">${icon(result.won ? 'leaf' : 'book')}</div><span class="eyebrow">${result.won ? 'A SMALL JOURNEY, WELL DONE' : 'EVERY TRY COUNTS'}</span><h2>${result.won ? '到岸了，又多会了一点。' : '歇一会儿，再出发。'}</h2><p>${result.won ? '十二次跳跃，都是你留下的足迹。' : '落水的词已经记下，下次会更熟悉。'}</p><div class="result-stats"><div><strong>${result.steps}<small> / 12</small></strong><span>成功跳跃</span></div><div><strong>${result.accuracy}<small>%</small></strong><span>正确率</span></div><div><strong>${result.wpm}</strong><span>WPM</span></div></div>${result.words.length ? `<p class="result-error-note">${result.words.length} 个错词已收入单词本，答对的词也在下方等你回顾。</p>` : '<div class="perfect-round">这轮没有错词，记得给自己一点掌声。</div>'}${roundReviewMarkup(result, store)}<div class="modal-actions"><button class="primary-button" id="play-again">再走一程 ${icon('arrow')}</button><button class="secondary-button" id="result-map">返回群岛</button></div>${result.words.length ? '<button class="text-button result-review" id="result-review">去温习错词</button>' : ''}`, 'result-dialog');
+  openModal(`<div class="result-art">${icon(result.won ? 'leaf' : 'book')}</div><span class="eyebrow">${result.won ? 'A SMALL JOURNEY, WELL DONE' : 'EVERY TRY COUNTS'}</span><h2>${result.won ? '到岸了，又多会了一点。' : '歇一会儿，再出发。'}</h2><p>${result.won ? '十二次跳跃，都是你留下的足迹。' : '落水的词已经记下，下次会更熟悉。'}</p><div class="result-stats"><div><strong>${result.steps}<small> / 12</small></strong><span>成功跳跃</span></div><div><strong>${result.accuracy}<small>%</small></strong><span>正确率</span></div><div title="分:秒，不计暂停与庆祝时间"><strong id="round-elapsed" class="round-time">${roundTime(result.elapsed)}</strong><span>本轮用时</span></div></div>${result.words.length ? `<p class="result-error-note">${result.words.length} 个错词已收入单词本，答对的词也在下方等你回顾。</p>` : '<div class="perfect-round">这轮没有错词，记得给自己一点掌声。</div>'}${roundReviewMarkup(result, store)}<div class="modal-actions"><button class="primary-button" id="play-again">再走一程 ${icon('arrow')}</button><button class="secondary-button" id="result-map">返回群岛</button></div>${result.words.length ? '<button class="text-button result-review" id="result-review">去温习错词</button>' : ''}`, 'result-dialog');
   $('#play-again').onclick = () => void startGame(lastRun.chapterId, lastRun.review);
   $('#result-map').onclick = returnToMap;
   if (result.words.length) $('#result-review').onclick = () => void startGame(selected.id, { kind: 'notebook' });
@@ -441,12 +455,13 @@ function showNotebook() {
   $('#review-start').onclick = () => void startGame(selected.id, { kind: 'notebook' });
 }
 function showSettings() {
-  openModal(`<div class="modal-top"><div><span class="eyebrow">MAKE YOURSELF AT HOME</span><h2>旅程设置</h2></div><button class="icon-button" id="close-settings" aria-label="关闭设置">${icon('close')}</button></div><div class="setting-row"><div><strong>短语也一起练</strong><p>词库中的 9 个短语将进入关卡，需要输入空格。</p></div><input id="phrase-toggle" type="checkbox" ${store.data.settings.phrases ? 'checked' : ''} aria-label="开启短语练习"/></div><div class="setting-row"><div><strong>轻柔的游戏音效</strong><p>为每一步跳跃和落水添加声音。</p></div><input id="sound-toggle" type="checkbox" ${audio.enabled ? 'checked' : ''} aria-label="开启音效"/></div><div class="backup-section"><h3>带上你的进度</h3><p>记录保存在当前浏览器。换设备前，可以导出一份备份。</p><div class="backup-actions"><button class="secondary-button" id="export-progress">${icon('download')}导出进度</button><label class="secondary-button import-button" for="import-progress">导入进度<input id="import-progress" type="file" accept="application/json,.json"/></label></div><p class="import-note">导入会替换当前记录，请先导出备份。</p></div><div class="data-source"><strong>词库来源</strong><a href="${metadata.sourceUrl}" target="_blank" rel="noopener">LynnShaw · vocabulary_for_ielts ${icon('arrow')}</a><p>${num(metadata.entries)} 条词条 · ${num(metadata.uniqueWords)} 个不同英文词条 · 22 个主题<br>本地快照：${metadata.snapshotDate} · 释义与拼写待持续校对</p></div><div id="settings-warning" class="settings-warning">${esc(store.warning)}</div>`, 'settings-dialog');
+  openModal(`<div class="modal-top"><div><span class="eyebrow">MAKE YOURSELF AT HOME</span><h2>旅程设置</h2></div><button class="icon-button" id="close-settings" aria-label="关闭设置">${icon('close')}</button></div><div class="setting-row"><div><strong>短语也一起练</strong><p>词库中的 9 个短语将进入关卡，需要输入空格。</p></div><input id="phrase-toggle" type="checkbox" ${store.data.settings.phrases ? 'checked' : ''} aria-label="开启短语练习"/></div><div class="setting-row"><div><strong>轻柔的游戏音效</strong><p>为每一步跳跃和落水添加声音。</p></div><input id="sound-toggle" type="checkbox" ${audio.enabled ? 'checked' : ''} aria-label="开启音效"/></div><div class="setting-row"><div><strong>云间轻音乐</strong><p>地图与荷塘的轻柔旋律，首次点击页面后播放。</p></div><input id="music-toggle" type="checkbox" ${audio.musicEnabled ? 'checked' : ''} aria-label="开启背景音乐"/></div><div class="backup-section"><h3>带上你的进度</h3><p>记录保存在当前浏览器。换设备前，可以导出一份备份。</p><div class="backup-actions"><button class="secondary-button" id="export-progress">${icon('download')}导出进度</button><label class="secondary-button import-button" for="import-progress">导入进度<input id="import-progress" type="file" accept="application/json,.json"/></label></div><p class="import-note">导入会替换当前记录，请先导出备份。</p></div><div class="data-source"><strong>词库来源</strong><a href="${metadata.sourceUrl}" target="_blank" rel="noopener">LynnShaw · vocabulary_for_ielts ${icon('arrow')}</a><p>${num(metadata.entries)} 条词条 · ${num(metadata.uniqueWords)} 个不同英文词条 · 22 个主题<br>本地快照：${metadata.snapshotDate} · 释义与拼写待持续校对</p></div><div id="settings-warning" class="settings-warning">${esc(store.warning)}</div>`, 'settings-dialog');
   $('#close-settings').onclick = closeModal;
   $('.data-source').insertAdjacentHTML('beforebegin', `<section class="reset-section"><h3>重新开始旅程</h3><p>清空已探索词汇、答对次数、错词本和岛屿记录，保留声音与练习偏好。需要留存记录时，可先在上方导出备份。</p><button class="secondary-button danger-button" id="reset-progress">重置学习进度</button></section>`);
   $('#reset-progress').onclick = showResetConfirmation;
   $('#phrase-toggle').onchange = event => { store.data.settings.phrases = (event.target as HTMLInputElement).checked; store.save(); };
   $('#sound-toggle').onchange = event => { audio.enabled = (event.target as HTMLInputElement).checked; store.data.settings.sound = audio.enabled; audio.unlock(); store.save(); if (currentView === 'game') $('#sound-button').innerHTML = icon(audio.enabled ? 'sound' : 'mute'); };
+  $('#music-toggle').onchange = event => setMusicPreference((event.target as HTMLInputElement).checked);
   $('#export-progress').onclick = () => {
     const url = URL.createObjectURL(new Blob([JSON.stringify(store.data, null, 2)], { type: 'application/json' }));
     const anchor = document.createElement('a'); anchor.href = url; anchor.download = `云间词屿-进度-${new Date().toISOString().slice(0, 10)}.json`; anchor.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
@@ -455,7 +470,7 @@ function showSettings() {
     const input = event.target as HTMLInputElement, file = input.files?.[0]; if (!file) return;
     try {
       if (file.size > 5_000_000) throw new Error('备份文件过大，请选择有效的进度文件。');
-      store.import(await file.text()); audio.enabled = store.data.settings.sound; refreshNotebookCount();
+      store.import(await file.text()); audio.enabled = store.data.settings.sound; audio.setMusic(store.data.settings.music); refreshMusicButton(); refreshNotebookCount();
       selected = chapters.find(c => c.id === store.data.lastChapter) ?? selected;
       if (currentView === 'game') returnToMap(); else { renderMap(); closeModal(); }
       toast('进度已经带回来了。');
@@ -478,6 +493,11 @@ function showResetConfirmation() {
   $('#cancel-reset').focus();
 }
 document.addEventListener('visibilitychange', resumeIfAllowed);
+document.addEventListener('visibilitychange', () => audio.setVisible(!document.hidden));
+document.addEventListener('click', () => audio.unlock());
+document.addEventListener('keydown', event => { if (!event.repeat) audio.unlock(); });
+window.addEventListener('pagehide', () => audio.setVisible(false));
+window.addEventListener('pageshow', () => audio.setVisible(!document.hidden));
 window.addEventListener('blur', () => { if (currentView === 'game' && !($('#dialog') as HTMLDialogElement).open && !session?.done) pauseMenu(); });
 window.addEventListener('focus', resumeIfAllowed);
 document.addEventListener('keydown', event => {

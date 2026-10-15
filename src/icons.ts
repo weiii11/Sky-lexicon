@@ -6,6 +6,7 @@ const paths: Record<string, string> = {
   leaf: '<path d="M20 3c1 9-2 15-9 15-5 0-7-4-6-7C7 5 15 6 20 3ZM4 21l11-11"/>',
   sound: '<path d="m11 4-6 5H2v6h3l6 5zM15 8a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14"/>',
   mute: '<path d="m11 4-6 5H2v6h3l6 5zM16 9l6 6m0-6-6 6"/>',
+  music: '<path d="M9 18V5l12-2v13M9 9l12-2"/><ellipse cx="6" cy="18" rx="3" ry="2"/><ellipse cx="18" cy="16" rx="3" ry="2"/>',
   pause: '<path d="M8 5v14M16 5v14"/>',
   play: '<path d="m8 4 13 8-13 8z"/>',
   close: '<path d="m6 6 12 12M18 6 6 18"/>',

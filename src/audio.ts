@@ -1,9 +1,37 @@
+import { AmbientMusic, type MusicScene } from './music.ts';
+
 export class GameAudio {
   enabled = true;
+  musicEnabled = true;
   private context?: AudioContext;
+  private music?: AmbientMusic;
+  private scene: MusicScene = 'map';
+  private visible = true;
   unlock() {
-    if (!this.enabled) return;
-    try { this.context ??= new AudioContext(); void this.context.resume().catch(() => {}); } catch { /* Sound is optional. */ }
+    if ((!this.enabled && !this.musicEnabled) || !this.visible) return;
+    try {
+      if (!this.context) {
+        this.context = new AudioContext();
+        this.music = new AmbientMusic(this.context); this.music.setScene(this.scene);
+        this.context.addEventListener('statechange', () => this.syncMusic());
+      }
+      if (this.context.state === 'running') this.syncMusic();
+      else void this.context.resume().then(() => this.syncMusic()).catch(() => {});
+    } catch { /* Sound is optional. */ }
+  }
+  setScene(scene: MusicScene) { this.scene = scene; this.music?.setScene(scene); }
+  setMusic(enabled: boolean) {
+    this.musicEnabled = enabled;
+    if (enabled) this.unlock(); else this.music?.stop();
+  }
+  setVisible(visible: boolean) {
+    this.visible = visible;
+    if (!visible) { this.music?.stop(); void this.context?.suspend().catch(() => {}); }
+    else if (this.context) this.unlock();
+  }
+  private syncMusic() {
+    if (this.musicEnabled && this.visible && this.context?.state === 'running') this.music?.start();
+    else this.music?.stop();
   }
   play(type: 'correct' | 'wrong' | 'win') {
     if (!this.enabled || !this.context || this.context.state !== 'running') return;

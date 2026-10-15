@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { ProgressStore, SAVE_KEY } from '../src/progress.ts';
-import { TypingSession, normalizeInput } from '../src/session.ts';
+import { TypingSession, normalizeInput, roundTime } from '../src/session.ts';
 import type { StorageLike, Word } from '../src/types.ts';
 import { letterFeedback } from '../src/typing.ts';
 import { islandExploration } from '../src/exploration.ts';
@@ -104,8 +104,16 @@ test('wrong submission consumes one life and records the old target, not the nex
 test('pause freezes the countdown and blocks submissions', () => {
   const { progress } = fixture(); const run = new TypingSession(word.chapterId, [word], progress, 'normal');
   const before = run.remaining; run.paused = true; assert.equal(run.tick(100), false);
-  assert.equal(run.remaining, before); assert.equal(run.submit(word.text), 'ignored');
+  assert.equal(run.remaining, before); assert.equal(run.elapsed, 0); assert.equal(run.submit(word.text), 'ignored');
   run.paused = false; assert.equal(run.tick(before + 1), true);
+});
+
+test('round time uses active play only and formats seconds across minute boundaries', () => {
+  const { progress } = fixture(); const run = new TypingSession(word.chapterId, [word], progress, 'normal');
+  run.tick(2.2); run.paused = true; run.tick(20); run.paused = false; run.tick(3);
+  run.end(false); run.tick(90);
+  assert.equal(run.result().elapsed, 5.2); assert.equal(roundTime(run.result().elapsed), '0:06');
+  assert.equal(roundTime(59.2), '1:00'); assert.equal(roundTime(125), '2:05'); assert.equal(roundTime(0), '0:00');
 });
 test('twelve correct answers end a round once, persist results, and block further input', () => {
   const { progress } = fixture(); const run = new TypingSession(word.chapterId, [word], progress, 'normal');
@@ -170,6 +178,7 @@ test('guided mode retains untyped hints and phrases preserve spaces and punctuat
 test('annotation preference persists and older backups default to hidden annotations', () => {
   const { progress, storage } = fixture();
   assert.equal(progress.data.settings.showDetails, false);
+  assert.equal(progress.data.settings.music, true);
   progress.data.settings.showDetails = true; progress.save();
   assert.equal(new ProgressStore(storage, words).data.settings.showDetails, true);
   progress.import(JSON.stringify({ version: 1, words: {}, settings: { pace: 'normal', sound: true, phrases: false } }));
@@ -194,7 +203,7 @@ test('explored words match the learned count, deduplicate shared progress, and r
 test('reset clears learning history durably, preserves preferences and other data, and prevents legacy reimport', () => {
   const { progress, storage, entries } = fixture();
   progress.correct(word); progress.mistake(word, 'spelling', 'typo'); progress.finish(word.chapterId, 12, true);
-  progress.data.settings = { pace: 'fast', sound: false, phrases: true, showDetails: true };
+  progress.data.settings = { pace: 'fast', sound: false, music: false, phrases: true, showDetails: true };
   progress.data.lastChapter = 'chapter-22'; progress.save();
   entries.set('lt_mistakes', JSON.stringify({ [word.text]: { count: 3 } }));
   entries.set('other-app', 'keep me');
@@ -203,7 +212,7 @@ test('reset clears learning history durably, preserves preferences and other dat
   const restored = new ProgressStore(storage, words);
   assert.deepEqual(restored.data.words, {}); assert.deepEqual(restored.data.chapters, {});
   assert.equal(restored.data.lastChapter, 'chapter-01'); assert.equal(restored.notebook().length, 0);
-  assert.deepEqual(restored.data.settings, { pace: 'fast', sound: false, phrases: true, showDetails: true });
+  assert.deepEqual(restored.data.settings, { pace: 'fast', sound: false, music: false, phrases: true, showDetails: true });
   assert.ok(entries.has('lt_mistakes')); assert.equal(entries.get('other-app'), 'keep me');
   restored.import(backup);
   assert.equal(restored.get(word).correct, 1); assert.equal(restored.notebook().length, 1);
