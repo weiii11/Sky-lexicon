@@ -11,3 +11,13 @@ Thumbs.db
 .DS_Store
 .codex/
 .agents/
+
+# Keep design originals and development reports locally.
+design/
+ART_PROMPTS.md
+VALIDATION.md
+scripts/*-check.mjs
+scripts/check-art.mjs
+scripts/prepare-art.mjs
+scripts/profile-map.mjs
+public/assets/frog.svg
