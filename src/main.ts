@@ -9,6 +9,7 @@ import { leafPromptMarkup, detailsMarkup, roundReviewMarkup, wordNotesMarkup } f
 import { islandExploration } from './exploration.ts';
 import { launchIslandFireworks } from './celebration.ts';
 import { trackMobileViewport } from './mobile-viewport.ts';
+import { showWelcome } from './welcome.ts';
 import type { Chapter, Pace, Word } from './types.ts';
 import type { createGarden } from './game.ts';
 
@@ -181,9 +182,9 @@ function selectChapter(id: string, locate: boolean) {
   document.querySelectorAll<HTMLElement>('[data-chapter]').forEach(el => el.setAttribute('aria-expanded', String(el.dataset.chapter === id)));
   if (locate) locateSelected();
 }
-function locateSelected() {
+function locateSelected(instant = false) {
   const viewport = $('#map-viewport'), island = $(`#island-${selected.id}`);
-  viewport.scrollTo({ left: 0, top: island.offsetTop - viewport.clientHeight * .4, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth' });
+  viewport.scrollTo({ left: 0, top: island.offsetTop - viewport.clientHeight * .4, behavior: instant || matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth' });
 }
 function renderInspector() {
   const stats = chapterSummary(selected);
@@ -555,8 +556,8 @@ function showResetConfirmation() {
 }
 document.addEventListener('visibilitychange', resumeIfAllowed);
 document.addEventListener('visibilitychange', () => audio.setVisible(!document.hidden));
-document.addEventListener('click', () => audio.unlock());
-document.addEventListener('keydown', event => { if (!event.repeat) audio.unlock(); });
+document.addEventListener('click', () => { if (!document.querySelector('.welcome:not(.departing)')) audio.unlock(); });
+document.addEventListener('keydown', event => { if (!event.repeat && !document.querySelector('.welcome')) audio.unlock(); });
 window.addEventListener('pagehide', () => audio.setVisible(false));
 window.addEventListener('pageshow', () => audio.setVisible(!document.hidden));
 window.addEventListener('blur', () => { if (currentView === 'game' && !($('#dialog') as HTMLDialogElement).open && !session?.done) pauseMenu(); });
@@ -566,4 +567,14 @@ document.addEventListener('keydown', event => {
   if (event.key === 'Escape' && currentView === 'game' && !($('#dialog') as HTMLDialogElement).open) { event.preventDefault(); pauseMenu(); }
 });
 shell(); renderMap();
-if (store.warning) toast(store.warning);
+const returning = Object.values(store.data.words).some(word => word.correct > 0 || word.errors > 0)
+  || Object.values(store.data.chapters).some(chapter => chapter.rounds > 0);
+showWelcome(app, {
+  returning, music: audio.musicEnabled,
+  onMusic: setMusicPreference,
+  onEnter: () => { if (returning) locateSelected(true); audio.unlock(); },
+  onReady: () => {
+    (returning ? $(`#island-${selected.id}`) : $('#map-viewport')).focus({ preventScroll: true });
+    if (store.warning) toast(store.warning);
+  },
+});
