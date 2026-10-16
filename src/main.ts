@@ -1,5 +1,5 @@
 import './style.css';
-import { chapters, chapterWords, words, metadata, chapterArt, chapterDescription, islandPosition } from './catalog.ts';
+import { chapters, chapterWords, words, metadata, chapterArt, chapterDescription, islandMapLayout } from './catalog.ts';
 import { ProgressStore, RECALL_THRESHOLD } from './progress.ts';
 import { TypingSession, ROUND_STEPS, normalizeInput, roundTime } from './session.ts';
 import { icon, escapeHTML as esc } from './icons.ts';
@@ -30,6 +30,8 @@ let mapScroll = { x: 0, y: 0 };
 let gardenResize: ResizeObserver | null = null;
 let leafPosition = { x: 500, y: 487, moving: false, visible: true };
 let islandVisibility: IntersectionObserver | null = null;
+let mapResize: ResizeObserver | null = null;
+let inspectorTrigger: HTMLButtonElement | null = null;
 let stopFireworks: (() => void) | null = null;
 
 const $ = <T extends HTMLElement = HTMLElement>(selector: string) => document.querySelector<T>(selector)!;
@@ -90,9 +92,9 @@ function setMusicPreference(enabled: boolean) {
 function renderMap() {
   audio.setScene('map');
   islandVisibility?.disconnect();
+  mapResize?.disconnect();
   currentView = 'map'; $('#nav-map').classList.add('active');
   const totals = summary();
-  const path = chapters.map((_, i) => { const p = islandPosition(i); return `${i ? 'L' : 'M'} ${p.x} ${p.y + 12}`; }).join(' ');
   $('#main').innerHTML = `
     <div class="map-layout">
       <aside class="atlas-sidebar">
@@ -104,14 +106,14 @@ function renderMap() {
         <div class="sidebar-bottom">${icon('leaf')}<span>不赶路，也在慢慢进步。</span></div>
       </aside>
       <section class="map-region" aria-label="22 座雅思主题岛屿">
-        <div class="map-caption"><span class="eyebrow">THE FLOATING ARCHIPELAGO</span><h2>下一站，去哪里？</h2><span class="map-hint">滚动探索 · 点击岛屿开始旅程</span></div>
-        <div class="map-viewport" id="map-viewport" tabindex="0" aria-label="天空地图，可横向和纵向滚动">
+        <div class="map-caption"><span class="eyebrow">THE FLOATING ARCHIPELAGO</span><h2>下一站，去哪里？</h2><span class="map-hint">上下浏览 · 点击岛屿开始旅程</span></div>
+        <div class="map-viewport" id="map-viewport" tabindex="0" aria-label="天空地图，可上下滚动浏览全部岛屿">
           <div class="map-world" id="map-world">
             <div class="cloud cloud-one"></div><div class="cloud cloud-two"></div><div class="cloud cloud-three"></div>
-            <svg class="island-path" viewBox="0 0 1740 1800" aria-hidden="true"><path d="${path}"/></svg>
+            <svg class="island-path" aria-hidden="true"><path/></svg>
             ${chapters.map((chapter, index) => {
-              const pos = islandPosition(index), stats = chapterSummary(chapter);
-              return `<button class="island ${chapter.id === selected.id ? 'selected' : ''} ${stats.complete ? 'completed' : ''}" id="island-${chapter.id}" data-chapter="${chapter.id}" style="left:${pos.x}px;top:${pos.y}px;--float-delay:${index * -0.71}s" aria-label="${chapter.name}，${stats.count} 个词条${stats.complete ? '，已完整探索' : ''}">
+              const stats = chapterSummary(chapter);
+              return `<button class="island ${chapter.id === selected.id ? 'selected' : ''} ${stats.complete ? 'completed' : ''}" id="island-${chapter.id}" data-chapter="${chapter.id}" style="--float-delay:${index * -0.71}s" aria-controls="island-inspector" aria-expanded="false" aria-label="${chapter.name}，${stats.count} 个词条${stats.complete ? '，已完整探索' : ''}">
                 <span class="island-aura"></span><img class="island-art" data-src="${chapterArt(chapter)}" ${index < 5 ? `src="${chapterArt(chapter)}"` : ''} alt="" draggable="false" decoding="async" width="512" height="512" />
                 <span class="island-label"><span class="island-index">${String(chapter.number).padStart(2, '0')}</span><span><strong>${chapter.name}</strong><small>${stats.count} 词${stats.complete ? ' · 完整探索' : stats.learned ? ` · 已探索 ${stats.learned}` : ' · 待探索'}</small></span>${stats.complete ? `<span class="island-complete-badge">${icon('sparkle')}</span>` : stats.recall ? icon('check') : ''}</span>
               </button>`;
@@ -119,7 +121,7 @@ function renderMap() {
             <div class="world-end">更多风景，藏在每一个学会的单词里。</div>
           </div>
         </div>
-        <section class="island-inspector" id="island-inspector" aria-label="选中岛屿详情"></section>
+        <section class="island-inspector" id="island-inspector" aria-label="选中岛屿详情" hidden></section>
         <div class="map-coordinate"><span>22 ISLANDS · ${num(metadata.entries)} WORDS</span><button id="locate-button" aria-label="定位选中岛屿">${icon('compass')}</button></div>
       </section>
     </div>`;
@@ -127,10 +129,15 @@ function renderMap() {
     const query = (event.target as HTMLInputElement).value.trim();
     document.querySelectorAll<HTMLElement>('.chapter-link').forEach(el => { el.hidden = !el.textContent?.includes(query); });
   });
-  document.querySelectorAll<HTMLButtonElement>('[data-chapter]').forEach(button => button.onclick = () => selectChapter(button.dataset.chapter!, button.classList.contains('chapter-link')));
+  document.querySelectorAll<HTMLButtonElement>('[data-chapter]').forEach(button => {
+    button.setAttribute('aria-controls', 'island-inspector'); button.setAttribute('aria-expanded', 'false');
+    button.onclick = () => { inspectorTrigger = button; selectChapter(button.dataset.chapter!, button.classList.contains('chapter-link')); };
+  });
+  $('.map-region').onclick = event => { if (!(event.target as Element).closest('.island, .island-inspector, #locate-button')) hideInspector(); };
   $('#locate-button').onclick = () => locateSelected();
   $('#show-explored').onclick = showExplored;
-  const viewport = $('#map-viewport'); viewport.scrollTo(mapScroll.x, mapScroll.y);
+  const viewport = $('#map-viewport'); fitMap(); viewport.scrollTo(0, mapScroll.y);
+  mapResize = new ResizeObserver(fitMap); mapResize.observe(viewport);
   viewport.addEventListener('scroll', () => { mapScroll = { x: viewport.scrollLeft, y: viewport.scrollTop }; }, { passive: true });
   islandVisibility = new IntersectionObserver(entries => {
     for (const entry of entries) {
@@ -143,21 +150,45 @@ function renderMap() {
   viewport.querySelectorAll('.island').forEach(island => islandVisibility!.observe(island));
   renderInspector();
 }
+function fitMap() {
+  if (currentView !== 'map') return;
+  const viewport = $('#map-viewport'), world = $('#map-world');
+  const width = viewport.clientWidth; if (!width) return;
+  const layout = islandMapLayout(width), height = Math.max(viewport.clientHeight, layout.height);
+  world.style.height = `${height}px`;
+  world.style.setProperty('--island-art-size', `${layout.artSize}px`);
+  world.style.setProperty('--island-width', `${layout.cardWidth}px`);
+  world.style.setProperty('--island-height', `${layout.cardHeight}px`);
+  world.querySelectorAll<HTMLElement>('.island').forEach((island, index) => {
+    const pos = layout.positions[index]; island.style.left = `${pos.x}px`; island.style.top = `${pos.y}px`;
+  });
+  const route = world.querySelector('svg')!;
+  route.setAttribute('viewBox', `0 0 ${width} ${height}`);
+  route.querySelector('path')!.setAttribute('d', layout.positions.map((pos, index) => `${index ? 'L' : 'M'} ${pos.x} ${pos.y + 12}`).join(' '));
+}
+function hideInspector(returnFocus = false) {
+  $('#island-inspector').hidden = true; $('.map-region').classList.remove('inspector-open');
+  document.querySelectorAll('[aria-controls="island-inspector"]').forEach(button => button.setAttribute('aria-expanded', 'false'));
+  if (returnFocus && inspectorTrigger?.isConnected) inspectorTrigger.focus({ preventScroll: true });
+}
 function selectChapter(id: string, locate: boolean) {
   selected = chapters.find(c => c.id === id)!; store.data.lastChapter = id; store.save();
   document.querySelectorAll<HTMLElement>('[data-chapter]').forEach(el => el.classList.toggle('selected', el.dataset.chapter === id));
-  renderInspector(); if (locate) locateSelected();
+  renderInspector(); $('#island-inspector').hidden = false; $('.map-region').classList.add('inspector-open');
+  document.querySelectorAll<HTMLElement>('[data-chapter]').forEach(el => el.setAttribute('aria-expanded', String(el.dataset.chapter === id)));
+  if (locate) locateSelected();
 }
 function locateSelected() {
-  const viewport = $('#map-viewport'), pos = islandPosition(selected.number - 1);
-  viewport.scrollTo({ left: pos.x - viewport.clientWidth * 0.4, top: pos.y - viewport.clientHeight * 0.45, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth' });
+  const viewport = $('#map-viewport'), island = $(`#island-${selected.id}`);
+  viewport.scrollTo({ left: 0, top: island.offsetTop - viewport.clientHeight * .4, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth' });
 }
 function renderInspector() {
   const stats = chapterSummary(selected);
   const examples = chapterWords(selected).filter(w => !w.isPhrase).slice(0, 3);
   const onlyPhrasesLeft = !store.data.settings.phrases && !stats.complete && chapterWords(selected).filter(word => word.isPhrase && store.get(word).correct === 0).length === stats.count - stats.learned;
   $('#island-inspector').classList.toggle('completed', stats.complete);
-  $('#island-inspector').innerHTML = `<div class="inspector-heading"><span class="eyebrow">ISLAND ${String(selected.number).padStart(2, '0')}</span><span class="open-tag">${stats.complete ? `${icon('sparkle')}已完整探索` : '自由探索'}</span><select id="mobile-chapter-select" class="mobile-chapter-select" aria-label="选择主题岛屿">${chapters.map(chapter => `<option value="${chapter.id}" ${chapter.id === selected.id ? 'selected' : ''}>${String(chapter.number).padStart(2, '0')} · ${chapter.name}${chapterSummary(chapter).complete ? ' · 已点亮' : ''}</option>`).join('')}</select></div><h3>${selected.name}</h3><p>${chapterDescription(selected)}</p><div class="island-metrics"><div><strong>${stats.count}</strong><span>主题词条</span></div><div><strong>${stats.learned}</strong><span>已经练习</span></div><div><strong>${stats.recall}</strong><span>中文回忆</span></div></div><div class="word-preview">${examples.map(w => `<span>${esc(w.text)}</span>`).join('')}</div><button class="primary-button" id="start-island">${stats.complete ? '再游这座岛' : '开始这段旅程'} ${icon('arrow')}</button><span class="inspector-note">${stats.complete ? '这一座岛的每个词，都留下了你的足迹。' : onlyPhrasesLeft ? '只剩短语待探索，可在设置开启短语练习。' : '每轮 12 次跳跃 · 三次落水机会'}</span>`;
+  $('#island-inspector').innerHTML = `<div class="inspector-heading"><span class="eyebrow">ISLAND ${String(selected.number).padStart(2, '0')}</span><span class="open-tag">${stats.complete ? `${icon('sparkle')}已完整探索` : '自由探索'}</span><select id="mobile-chapter-select" class="mobile-chapter-select" aria-label="选择主题岛屿">${chapters.map(chapter => `<option value="${chapter.id}" ${chapter.id === selected.id ? 'selected' : ''}>${String(chapter.number).padStart(2, '0')} · ${chapter.name}${chapterSummary(chapter).complete ? ' · 已点亮' : ''}</option>`).join('')}</select><button id="close-inspector" class="icon-button inspector-close" aria-label="收起岛屿详情">${icon('close')}</button></div><h3>${selected.name}</h3><p>${chapterDescription(selected)}</p><div class="island-metrics"><div><strong>${stats.count}</strong><span>主题词条</span></div><div><strong>${stats.learned}</strong><span>已经练习</span></div><div><strong>${stats.recall}</strong><span>中文回忆</span></div></div><div class="word-preview">${examples.map(w => `<span>${esc(w.text)}</span>`).join('')}</div><button class="primary-button" id="start-island">${stats.complete ? '再游这座岛' : '开始这段旅程'} ${icon('arrow')}</button><span class="inspector-note">${stats.complete ? '这一座岛的每个词，都留下了你的足迹。' : onlyPhrasesLeft ? '只剩短语待探索，可在设置开启短语练习。' : '每轮 12 次跳跃 · 三次落水机会'}</span>`;
+  $('#close-inspector').onclick = () => hideInspector(true);
   $('#start-island').onclick = () => void startGame(selected.id);
   $('#mobile-chapter-select').onchange = event => selectChapter((event.target as HTMLSelectElement).value, true);
 }
@@ -170,6 +201,7 @@ async function startGame(chapterId: string, review: ReviewOptions | null = null)
   if ($<HTMLDialogElement>('#dialog').open) $<HTMLDialogElement>('#dialog').close();
   const token = ++gameLoadToken;
   islandVisibility?.disconnect(); islandVisibility = null;
+  mapResize?.disconnect(); mapResize = null;
   gardenResize?.disconnect(); gardenResize = null;
   if (garden) { garden.game.destroy(true); garden = null; }
   currentView = 'game'; userPaused = false; composing = false; audio.setScene('game');
@@ -501,6 +533,7 @@ window.addEventListener('pageshow', () => audio.setVisible(!document.hidden));
 window.addEventListener('blur', () => { if (currentView === 'game' && !($('#dialog') as HTMLDialogElement).open && !session?.done) pauseMenu(); });
 window.addEventListener('focus', resumeIfAllowed);
 document.addEventListener('keydown', event => {
+  if (event.key === 'Escape' && currentView === 'map' && !$<HTMLDialogElement>('#dialog').open) hideInspector(true);
   if (event.key === 'Escape' && currentView === 'game' && !($('#dialog') as HTMLDialogElement).open) { event.preventDefault(); pauseMenu(); }
 });
 shell(); renderMap();

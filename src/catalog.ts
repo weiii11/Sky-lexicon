@@ -16,8 +16,18 @@ const descriptions = [
 ];
 export function chapterArt(chapter: Chapter) { return `assets/islands/v2/${chapter.id}.webp`; }
 export function chapterDescription(chapter: Chapter) { return descriptions[chapter.number - 1]; }
-export function islandPosition(index: number) {
-  const row = Math.floor(index / 5);
-  const col = row % 2 === 0 ? index % 5 : 4 - index % 5;
-  return { x: 170 + col * 320 + (row % 2 ? 30 : 0), y: 220 + row * 340 + (col % 2 ? -45 : 20) };
+export function islandMapLayout(width: number) {
+  const compact = width < 600;
+  const columns = width < 360 ? 1 : compact ? 2 : Math.min(5, Math.max(2, Math.floor(width / 300)));
+  const inset = compact ? 16 : 32;
+  const cell = (width - inset * 2) / columns;
+  const artSize = Math.floor(Math.min(compact ? 176 : 240, cell - 40));
+  const cardWidth = artSize + 24, cardHeight = artSize + 64;
+  const rowStep = cardHeight + (compact ? 46 : 62), top = compact ? 144 : 154;
+  const positions = chapters.map((_, index) => {
+    const row = Math.floor(index / columns);
+    const col = row % 2 === 0 ? index % columns : columns - 1 - index % columns;
+    return { x: inset + cell * (col + .5), y: top + cardHeight / 2 + row * rowStep + (columns > 1 ? col % 2 ? -14 : 14 : 0) };
+  });
+  return { columns, artSize, cardWidth, cardHeight, positions, height: top + Math.ceil(chapters.length / columns) * rowStep + 64 };
 }
