@@ -10,6 +10,7 @@ import { islandExploration } from './exploration.ts';
 import { launchIslandFireworks } from './celebration.ts';
 import { trackMobileViewport } from './mobile-viewport.ts';
 import { showWelcome } from './welcome.ts';
+import { startVisitAnalytics } from './analytics.ts';
 import type { Chapter, Pace, Word } from './types.ts';
 import type { createGarden } from './game.ts';
 
@@ -578,3 +579,4 @@ showWelcome(app, {
     if (store.warning) toast(store.warning);
   },
 });
+startVisitAnalytics();
