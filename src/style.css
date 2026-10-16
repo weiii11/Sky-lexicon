@@ -419,3 +419,35 @@ input::placeholder { color: #a1ac99; }
   .round-review-heading > span { font-size: 8px; }
   .round-word-state { display: none; }
 }
+
+/* Fit the game above the system keyboard, including iOS visual-viewport panning. */
+.keyboard-open body { overflow: hidden; }
+.keyboard-open .topbar { visibility: hidden; }
+.keyboard-open .game-layout {
+  position: fixed; z-index: 20;
+  top: var(--keyboard-viewport-top); left: var(--keyboard-viewport-left);
+  width: var(--keyboard-viewport-width); height: var(--keyboard-viewport-height);
+  min-height: 0; padding: 7px 10px; overflow: hidden;
+  display: flex; flex-direction: column;
+}
+.keyboard-open .game-toolbar { flex-shrink: 0; flex-wrap: nowrap; gap: 6px; margin-bottom: 5px; }
+.keyboard-open .game-title, .keyboard-open .game-bottom, .keyboard-open .details-toggle,
+.keyboard-open #word-details, .keyboard-open .garden-caption, .keyboard-open .pond-input-help { display: none; }
+.keyboard-open .game-controls { margin-left: auto; gap: 3px; }
+.keyboard-open .game-controls select { padding: 5px; font-size: 10px; }
+.keyboard-open .game-controls .icon-button { width: 30px; height: 30px; }
+.keyboard-open .game-content { flex: 1; min-height: 0; margin: 0; width: 100%; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: 24px minmax(0, 1fr); gap: 5px; }
+.keyboard-open .game-note { display: flex; align-items: center; justify-content: space-between; padding: 0; grid-row: 1; }
+.keyboard-open .game-note > .eyebrow, .keyboard-open .game-note h2, .keyboard-open .game-note > p,
+.keyboard-open .game-note .small-note, .keyboard-open .game-note .text-button { display: none; }
+.keyboard-open .step-stat strong { font-size: 21px; }
+.keyboard-open .step-stat span { font-size: 9px; }
+.keyboard-open .step-dots { display: flex; margin: 0; gap: 3px; }
+.keyboard-open .step-dots i { width: 7px; }
+.keyboard-open .lives { margin: 0; gap: 5px; }
+.keyboard-open .garden-frame { grid-row: 2; height: 100%; min-height: 0; border-radius: 11px; }
+.keyboard-open .pond-status { top: 6px; left: 7px; right: 7px; padding: 4px 8px; gap: 12px; }
+.keyboard-open .pond-status .time-header { font-size: 8px; }
+.keyboard-open .pond-status .time-track { height: 2px; margin-top: 3px; }
+.keyboard-open .pond-status .round-accuracy { font-size: 8px; min-width: 65px; }
+.keyboard-open .garden-frame .game-message { bottom: 5px; padding: 6px; font-size: 10px; }

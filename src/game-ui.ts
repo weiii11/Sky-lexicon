@@ -11,8 +11,8 @@ export function wordNotesMarkup(word: Word, progress: ProgressStore) {
 }
 
 export function leafPromptMarkup() {
-  return `<form id="typing-form" class="leaf-prompt" aria-label="荷叶上的单词输入">
-    <div class="letter-input-row"><div class="leaf-feedback" id="leaf-feedback" aria-hidden="true"></div><input id="typing-input" type="text" inputmode="text" lang="en" autocomplete="off" autocapitalize="none" spellcheck="false" aria-label="输入英文" aria-describedby="leaf-meaning input-help" disabled /></div>
+  return `<form id="typing-form" class="leaf-prompt" autocomplete="off" autocorrect="off" aria-label="荷叶上的单词输入">
+    <div class="letter-input-row"><div class="leaf-feedback" id="leaf-feedback" aria-hidden="true"></div><input id="typing-input" type="text" inputmode="text" enterkeyhint="go" lang="en" autocomplete="off" autocorrect="off" autocapitalize="none" writingsuggestions="false" spellcheck="false" aria-label="输入英文" aria-describedby="leaf-meaning input-help" disabled /></div>
     <label class="leaf-meaning" id="leaf-meaning" for="typing-input"></label>
   </form>
   <div class="pond-status"><div class="pond-time"><div class="time-header"><span>荷叶等你</span><strong id="time-remaining"></strong></div><div class="time-track"><i id="time-bar"></i></div></div><div class="round-accuracy"><span>正确率</span><strong id="accuracy">—</strong></div></div>

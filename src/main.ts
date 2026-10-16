@@ -8,10 +8,12 @@ import { letterFeedback } from './typing.ts';
 import { leafPromptMarkup, detailsMarkup, roundReviewMarkup, wordNotesMarkup } from './game-ui.ts';
 import { islandExploration } from './exploration.ts';
 import { launchIslandFireworks } from './celebration.ts';
+import { trackMobileViewport } from './mobile-viewport.ts';
 import type { Chapter, Pace, Word } from './types.ts';
 import type { createGarden } from './game.ts';
 
 const app = document.querySelector<HTMLDivElement>('#app')!;
+const refreshMobileViewport = trackMobileViewport();
 const store = new ProgressStore(localStorage, words);
 const audio = new GameAudio(); audio.enabled = store.data.settings.sound; audio.musicEnabled = store.data.settings.music;
 let selected = chapters.find(c => c.id === store.data.lastChapter) ?? chapters[0];
@@ -149,6 +151,7 @@ function renderMap() {
   }, { root: viewport, rootMargin: '48px', threshold: 0 });
   viewport.querySelectorAll('.island').forEach(island => islandVisibility!.observe(island));
   renderInspector();
+  refreshMobileViewport();
 }
 function fitMap() {
   if (currentView !== 'map') return;
@@ -228,15 +231,13 @@ async function startGame(chapterId: string, review: ReviewOptions | null = null)
   const pace = $('#pace-select') as HTMLSelectElement; pace.value = store.data.settings.pace;
   pace.onchange = () => { const value = pace.value as Pace; session!.setPace(value); garden?.scene.setPace(value); store.data.settings.pace = value; store.save(); };
   const input = $('#typing-input') as HTMLInputElement;
-  input.addEventListener('compositionstart', () => { composing = true; });
-  input.addEventListener('compositionend', () => { composing = false; checkAutoSubmit(); });
-  input.addEventListener('input', checkAutoSubmit);
-  input.addEventListener('keyup', renderTypingFeedback);
+  bindTypingInput(input);
   $('#typing-form').addEventListener('click', event => {
-    if (!(event.target as HTMLElement).closest('button') && !input.disabled) input.focus({ preventScroll: true });
+    const current = $<HTMLInputElement>('#typing-input');
+    if (!(event.target as HTMLElement).closest('button') && !current.disabled) current.focus({ preventScroll: true });
   });
   $('#typing-form').onsubmit = event => { event.preventDefault(); if (!composing) submitWord(); };
-  renderWord(); updateHud();
+  renderWord(); updateHud(); refreshMobileViewport();
   try {
     const { createGarden } = await import('./game.ts');
     if (token !== gameLoadToken || currentView !== 'game') return;
@@ -255,6 +256,28 @@ async function startGame(chapterId: string, review: ReviewOptions | null = null)
     gardenResize.observe($('.garden-frame'));
   } catch (error) { toast('游戏画面加载失败，请刷新后重试。'); console.error(error); }
 }
+function bindTypingInput(input: HTMLInputElement) {
+  input.addEventListener('compositionstart', () => { composing = true; });
+  input.addEventListener('compositionend', () => { composing = false; checkAutoSubmit(); });
+  input.addEventListener('beforeinput', event => {
+    if (session?.paused || session?.done || garden?.scene.recovering) event.preventDefault();
+  });
+  input.addEventListener('input', checkAutoSubmit);
+  input.addEventListener('keyup', renderTypingFeedback);
+}
+function clearTypingInput(): HTMLInputElement {
+  let input = $<HTMLInputElement>('#typing-input');
+  if (input.value && matchMedia('(any-pointer: coarse)').matches) {
+    // A fresh editable field gives mobile IMEs a new word boundary. Transfer
+    // focus synchronously so an already-open keyboard can stay open.
+    const focused = document.activeElement === input;
+    const fresh = input.cloneNode() as HTMLInputElement; fresh.value = '';
+    input.replaceWith(fresh); bindTypingInput(fresh); input = fresh; composing = false;
+    if (focused) fresh.focus({ preventScroll: true });
+  }
+  input.value = ''; input.classList.remove('mismatch');
+  return input;
+}
 function renderWord() {
   if (!session || currentView !== 'game') return;
   const word = session.word, progress = store.get(word), recall = session.recall;
@@ -269,7 +292,7 @@ function renderWord() {
   $('#word-mastery').textContent = `${Math.min(progress.correct, RECALL_THRESHOLD)} / ${RECALL_THRESHOLD}`;
   $('#leaf-meaning').textContent = word.meaning;
   $('#details-chapter').textContent = chapters.find(chapter => chapter.id === word.chapterId)!.name;
-  const input = $('#typing-input') as HTMLInputElement; input.value = ''; input.classList.remove('mismatch');
+  const input = clearTypingInput();
   input.setAttribute('aria-label', recall ? `根据中文填写英文，共 ${Array.from(word.text).length} 个字符` : `输入英文：${word.text}`);
   renderTypingFeedback();
 }
@@ -299,7 +322,10 @@ function positionLeafPrompt() {
   const x = rect.left - frame.left + leafPosition.x * rect.width / 1000;
   const y = rect.top - frame.top + leafPosition.y * rect.height / 720;
   prompt.style.left = `${Math.max(width / 2 + 12, Math.min(frame.width - width / 2 - 12, x))}px`;
-  prompt.style.top = `${Math.max(prompt.offsetHeight / 2 + 85, y)}px`;
+  const keyboard = document.documentElement.classList.contains('keyboard-open');
+  const top = prompt.offsetHeight / 2 + (keyboard ? 35 : 85);
+  const bottom = frame.height - prompt.offsetHeight / 2 - 10;
+  prompt.style.top = `${Math.max(Math.min(top, bottom), Math.min(bottom, y))}px`;
   prompt.classList.toggle('recovering', !leafPosition.visible || Boolean(garden?.scene.recovering));
 }
 function renderTypingFeedback() {
@@ -336,7 +362,7 @@ function submitWord() {
     refreshNotebookCount(); updateHud();
     if (!session.done) renderWord();
     if (session.done || newlyCompleted.length) {
-      const finished = session; input.disabled = true;
+      const finished = session; $<HTMLInputElement>('#typing-input').disabled = true;
       garden.scene.whenSettled(() => {
         if (currentView !== 'game' || session !== finished) return;
         if (newlyCompleted.length) showIslandCelebration(newlyCompleted);
@@ -354,13 +380,15 @@ function failWord(reason: 'timeout' | 'boundary') {
 function showFall(reason: 'spelling' | 'timeout' | 'boundary', word: Word) {
   if (!session || !garden) return;
   session.paused = true; audio.play('wrong'); refreshNotebookCount(); updateHud();
-  const input = $('#typing-input') as HTMLInputElement; input.disabled = true;
+  const input = $('#typing-input') as HTMLInputElement;
+  if (!matchMedia('(any-pointer: coarse)').matches) input.disabled = true;
   $('#typing-form').classList.add('recovering');
   showGameMessage(`${reason === 'spelling' ? '拼写有点偏差' : reason === 'timeout' ? '荷叶等得有点久了' : '荷叶漂到岸边了'} · ${word.text} 已收入单词本`, true);
   garden.scene.fall(() => {
     if (!session || currentView !== 'game') return;
     if (session.done) { showResult(); return; }
-    input.disabled = false; renderWord(); resumeIfAllowed(); if (!$<HTMLDialogElement>('#dialog').open) input.focus();
+    $<HTMLInputElement>('#typing-input').disabled = false; renderWord(); resumeIfAllowed();
+    if (!$<HTMLDialogElement>('#dialog').open) $<HTMLInputElement>('#typing-input').focus({ preventScroll: true });
   });
 }
 function showGameMessage(text: string, error: boolean) {
@@ -399,6 +427,7 @@ function openModal(html: string, className = '') {
   if (!dialog.open) modalReturnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   dialog.className = `dialog ${className}`; $('#dialog-content').innerHTML = html;
   if (!dialog.open) dialog.showModal();
+  refreshMobileViewport();
   if (session) session.paused = true;
   garden?.scene.stop();
   // Falling has its own recovery animation; otherwise suspend movement as well.
