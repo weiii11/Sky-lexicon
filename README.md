@@ -4,4 +4,4 @@
 
 试玩：https://weiii11.github.io/Sky-lexicon/
 
-词库来源：[LynnShaw/vocabulary_for_ielts](https://github.com/LynnShaw/vocabulary_for_ielts)，共 22 章、3,632 条词汇（3,592 个不同词条）。
+词库来源：[LynnShaw/vocabulary_for_ielts](https://github.com/LynnShaw/vocabulary_for_ielts)，共 22 个主题，去重后为 3,592 个词汇（含短语）。
